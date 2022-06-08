@@ -23,6 +23,20 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+# method to split data into sets
+def split_in_sets(data):
+    essay_sets = []
+
+    for s in range(1, 9):
+        essay_set = data[data["essay_set"] == s]
+        essay_set.dropna(axis=1, inplace=True)
+        n, d = essay_set.shape
+        print("Set", s, ": Essays = ", n, "\t Attributes = ", d)
+        essay_sets.append(essay_set)
+
+    return essay_sets
+
+
 def get_model(Hidden_dim1=400, Hidden_dim2=128, return_sequences=True, dropout=0.3, recurrent_dropout=0.3,
               input_size_x=3, input_size_y=768, activation='relu', bidirectional=False):
     """Define the model."""
@@ -115,7 +129,6 @@ def preprocess_essays(X):
     model = model_class.from_pretrained(pretrained_weights)
 
     essays = X['essay']
-    sets = X['essay_set']
 
     tokenized_essay = essays.apply((lambda x: tokenizer.encode(x, add_special_tokens=False, return_tensors='pt')))
     tokenized_essay = tokenized_essay.apply(lambda x: x[0].split(510) if len(x[0]) > 510 else x)
@@ -128,32 +141,54 @@ def preprocess_essays(X):
     tokenized_essay = tokenized_essay.to_numpy()
     tokenized_essay = np.array([np.array(val) for val in tokenized_essay])
 
-    return sets, tokenized_essay
+    return tokenized_essay
 
 
-def predict_score(set, essay, model):
+def predict_score(set, tokenized_essays):
+    model = get_model(bidirectional=True, input_size_x=tokenized_essays.shape[1],
+                      input_size_y=tokenized_essays.shape[2])
+
     saved_model_path = 'saved_model/set{}/cp1.h5'.format(set)
 
     model.load_weights(saved_model_path)
 
-    y_pred = model.predict(essay)
+    y_pred = model.predict(tokenized_essays)
+    y_pred = np.around(y_pred)
+    y_pred = y_pred.reshape(1, -1)[0]
 
     return y_pred
 
 
+def predict_score_df(df):
+    essay_sets = split_in_sets(df)
+
+    results_ls = []
+
+    for sets, essays in enumerate(tuple(essay_sets)):
+        tokenized_essays = preprocess_essays(essays)
+        y_pred = predict_score(sets + 1, tokenized_essays)
+        print('Scores of set', sets + 1, ':', y_pred)
+        essays['predicted score'] = y_pred
+        # print(essays)
+        results_ls.append(essays)
+
+    results_df = pd.concat(results_ls, ignore_index=True, axis=0)
+
+    return results_df
+
+
 def main():
     df = pd.read_excel('data/test_set.xlsx')
-    print(df.shape)
 
-    sets, tokenized_essays = preprocess_essays(df)
+    predicted_df = predict_score_df(df)
 
-    model = get_model(bidirectional=True, input_size_x=tokenized_essays.shape[1],
-                      input_size_y=tokenized_essays.shape[2])
+    print(predicted_df)
 
-    for i in range(len(sets)):
-        # y_pred = predict_score(sets[i], tokenized_essays[i], model)
-        # print(y_pred)
-        print(type(tokenized_essays[i]))
+    # Export to excel file
+    predicted_df.to_excel('./results/test_set_predicted_score.xlsx')
+
+    print('Done!')
+
 
 if __name__ == "__main__":
     main()
