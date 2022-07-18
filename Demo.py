@@ -185,7 +185,7 @@ def main():
     print(predicted_df)
 
     # Export to excel file
-    predicted_df.to_excel('./results/test_set_predicted_score.xlsx')
+    # predicted_df.to_excel('./results/test_set_predicted_score.xlsx')
 
     print('Done!')
 
